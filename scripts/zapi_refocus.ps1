@@ -97,16 +97,22 @@ for ($c = 1; $c -le $ncfg; $c++) {
   $x0 = $row.GetOperandCell($c).DoubleValue
   $pb = PeakShift $c
   $m0 = MtfAt $x0 $c
-  # 粗扫：±Scan，41 点，取全局最大
-  $bx = $x0; $bm = $m0
-  for ($k = -20; $k -le 20; $k++) {
-    $x = $x0 + $Scan * $k / 20.0
-    if ($x -lt 0.05) { continue }
-    $m = MtfAt $x $c
-    if ($m -gt $bm) { $bm = $m; $bx = $x }
+  # 粗扫：±Scan，41 点，取全局最大；最佳点落在扫描边缘就把范围加倍再扫（最多 3 次）——
+  # 老专利（JPS62-78520A EF28/2.8）近轴焦点离 MTF 峰 0.2mm 以上，±0.2 一次扫不到
+  $bx = $x0; $bm = $m0; $sc = $Scan
+  for ($grow = 0; $grow -lt 4; $grow++) {
+    $edge = $false
+    for ($k = -20; $k -le 20; $k++) {
+      $x = $x0 + $sc * $k / 20.0
+      if ($x -lt 0.05) { continue }
+      $m = MtfAt $x $c
+      if ($m -gt $bm) { $bm = $m; $bx = $x; $edge = ([math]::Abs($k) -eq 20) }
+    }
+    if (-not $edge) { break }
+    $sc = 2 * $sc
   }
   # 黄金分割细化 [bx-h, bx+h]
-  $h = $Scan / 20.0; $lo = [math]::Max(0.05, $bx - $h); $hi = $bx + $h
+  $h = $sc / 20.0; $lo = [math]::Max(0.05, $bx - $h); $hi = $bx + $h
   $p = $lo + $gr * ($hi - $lo); $q = $hi - $gr * ($hi - $lo)
   $fp = MtfAt $p $c; $fq = MtfAt $q $c
   for ($it = 0; $it -lt 40 -and ($hi - $lo) -gt 1e-5; $it++) {
