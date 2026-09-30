@@ -123,14 +123,15 @@ git 提交后**重新打包 .skill 上传一次**（`python tools/build_skill.py
 ### 玻璃目录：用用户自己 OpticStudio 的目录，不要用 skill 自带的
 
 `assets/glass/` 那四本是**兜底**。真正该用的是用户机器上的
-`C:\Users\T1791\Documents\Zemax\Glasscat\`（已授权），第一步就一并 stage 回来：
+`E:\Documents\Zemax\Glasscat\`（本机「文档」重定向到 E:，**不是** `C:\Users\T1791\Documents`；已授权），第一步就一并 stage 回来：
 
 ```bash
-# 挑各厂最新的一本，改名成 <厂家>.AGF 放进 /tmp/gc
-HOYA20260707.agf → HOYA.AGF      OHARA_260701.AGF → OHARA.AGF   ← OHARA 用 260701（2026-07 版）
-CDGM2025011.AGF  → CDGM.AGF      NIKON-HIKARI20220701.agf → HIKARI.AGF
-export PATENT_GLASS_DIR=/tmp/gc
+# 挑各厂最新的一本，改名成 <厂家>.AGF 放进 scratchpad/gc（2026-09-30 核对的现有最新版）
+HOYA20260707.agf        → HOYA.AGF     OHARA_260529_CATALOG.AGF  → OHARA.AGF   ← 本机没有 260701，用户确认用 260529
+CDGM-ZEMAX202609.AGF    → CDGM.AGF     NIKON-HIKARI20220701.agf  → HIKARI.AGF
+export PATENT_GLASS_DIR='C:\…\scratchpad\gc'     # 必须写 Windows 路径
 ```
+开工先 `ls E:/Documents/Zemax/Glasscat` 核一眼 —— 用户会下新版目录，文件名随之变。
 
 **注意编码**：OHARA / CDGM 的 `.AGF` 是 **UTF-16**（带 BOM），HOYA 的是 latin-1。
 自己写牌号核查脚本时必须按 BOM 判断编码，否则会把整本读成空、误报「牌号缺失」。
@@ -143,7 +144,7 @@ export PATENT_GLASS_DIR=/tmp/gc
 同时 **spec 里要写 `zmx.gcat`**，`make_zmx.py` 用它写 GCAT 行：
 
 ```json
-"gcat": {"HOYA":"HOYA20260707","OHARA":"OHARA_260701","CDGM":"CDGM2025011","HIKARI":"NIKON-HIKARI20220701"}
+"gcat": {"HOYA":"HOYA20260707","OHARA":"OHARA_260529_CATALOG","CDGM":"CDGM-ZEMAX202609","HIKARI":"NIKON-HIKARI20220701"}
 ```
 
 ### 标准快路径（目标 13~15 次调用）
@@ -275,7 +276,7 @@ e 线判定交给 `lensmath.py`。`vendors` 按厂商国别填，顺序即优先
 
 ```json
 "zmx": {"name": "…", "fno": 1.854, "max_y": 21.633,
-        "gcat": {"HOYA":"HOYA20260707","OHARA":"OHARA_260701","CDGM":"CDGM2025011"},
+        "gcat": {"HOYA":"HOYA20260707","OHARA":"OHARA_260529_CATALOG","CDGM":"CDGM-ZEMAX202609"},
         "focus":  {"var_before": 10, "var_after": 15, "sum": 20.0880,
                    "key_before": "D10", "key_after": "D15"},
         "focus2": {"var_before": 16, "var_after": 19, "sum": 24.6554,
@@ -1393,7 +1394,7 @@ dPgF = Pg,F − (0.6438 − 0.001682·νd)      ← Zemax 的「正常线」
 
 纯 ASCII / latin-1 + CRLF。中文名要转 ASCII。
 **拿不准就去用户机器上读 OpticStudio 自带的样例对照**：
-`Documents\Zemax\Samples\**\*.zmx`（UTF-16LE，`iconv -f UTF-16LE -t UTF-8`）。
+`E:\Documents\Zemax\Samples\**\*.zmx`（UTF-16LE，`iconv -f UTF-16LE -t UTF-8`）。
 整个 Samples 树有 400+ 个文件，把同一行的取值分布统计一下，字段含义基本能反推出来。
 
 ### 头部四处踩过雷
@@ -1418,7 +1419,7 @@ RAIM 0 2 1 1 0 0 0 0 0 1
 第 2 位 = Ray Aiming（0/1/2 = Off/Paraxial/Real），默认写 **2**。
 
 ```
-GCAT HOYA20260707 OHARA_260701
+GCAT HOYA20260707 OHARA_260529_CATALOG
 ```
 **写用户机器上真实存在的目录文件名**，不要写 `HOYA OHARA`（那是好几年前的自带版本，
 新牌号不在里面，文件打不开）。由 spec 的 `zmx.gcat` 映射得到。
@@ -1642,7 +1643,7 @@ FVDY   1   1 0.1263 0 0 0 1 1 1 0 0
 
 ```bash
 python3 scripts/seq2zmx.py A2628.seq -o A2628.zmx \
-    [--gcat "CDGM=CDGM2025011,HOYA=HOYA20260707"] [--glassdir DIR] \
+    [--gcat "CDGM=CDGM-ZEMAX202609,HOYA=HOYA20260707"] [--glassdir DIR] \
     [--reverse-fields] [--raim 0|1|2] [--no-clap]
 ```
 

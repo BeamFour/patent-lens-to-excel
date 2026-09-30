@@ -86,6 +86,7 @@ def _catalog(vendor, gcat=None):
     from lensmath import _decode
     here = os.path.dirname(os.path.abspath(__file__))
     dirs = [os.environ.get('PATENT_GLASS_DIR'),
+            r'E:\Documents\Zemax\Glasscat',      # 本机「文档」被重定向到 E:
             os.path.join(os.path.expanduser('~'), 'Documents', 'Zemax', 'Glasscat'),
             os.path.join(here, '..', 'assets', 'glass')]
     out = {}
@@ -1093,7 +1094,9 @@ def main():
         obj = None if (d0 is None or str(d0).upper().startswith('INF')) else float(d0)
         S, zimg, _ = build(spec, emb, state, dmap, lam=lam_p)
         Sw = [build(spec, emb, state, dmap, lam=l)[0] for l in lams if abs(l - lam_p) > 1e-9]
-        v, mr, blk, _b, axr = solve_state(S, zimg, zx, obj, a.margin, True,
+        # 变焦镜头各位置的实像高不同（畸变随焦距变）：zmx.max_y_cfg = {结构名: 最大实像高}
+        zxc = dict(zx, max_y=(zx.get('max_y_cfg') or {}).get(c.get('name'), zx['max_y']))
+        v, mr, blk, _b, axr = solve_state(S, zimg, zxc, obj, a.margin, True,
                                           '\n== %s ==  ' % c.get('name', '?'), a.fit_ellipse,
                                           rEP_fixed=ar['rEP'], wfno=ar['wfno'], S_waves=Sw)
         vig_cfg.append(v)

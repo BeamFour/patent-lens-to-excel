@@ -4,7 +4,7 @@
 seq2zmx.py —— CODE V 序列文件 .seq  →  Zemax .zmx（与 make_seq.py 相反的方向）
 
     python3 seq2zmx.py A2628.seq -o A2628.zmx \
-        [--gcat "CDGM=CDGM2025011,HOYA=HOYA20260707"] [--glassdir DIR] \
+        [--gcat "CDGM=CDGM-ZEMAX202609,HOYA=HOYA20260707"] [--glassdir DIR] \
         [--reverse-fields] [--raim 2] [--no-clap]
 
 对照表见 references/codev-seq.md（那份是 zmx→seq，反过来读即可）。几条要点：
@@ -106,7 +106,7 @@ def parse(lines):
                 rest = m.group(4).split()
                 s = {'kind': m.group(1), 'rdy': float(m.group(2)), 'thi': float(m.group(3)),
                      'glass': None, 'model': None, 'asp': None, 'cir': None,
-                     'sto': False, 'oal': None, 'doe': None}
+                     'sto': False, 'oal': None, 'doe': None, 'sps': None}
                 if len(rest) >= 2 and not rest[1].startswith('!'):
                     # 旧版 make_seq 的「nd vd」空格写法（CODE V 自己会读错成 n=1.1，但本意清楚，照本意读）
                     try:    s['model'] = (float(rest[0]), float(rest[1]))
@@ -151,6 +151,33 @@ def parse(lines):
                 if q[0] == 'HWL': cur['doe']['wl_nm'] = float(q[1])
                 elif q[0] == 'HCO' and len(q) >= 3 and q[1].upper().startswith('C'):
                     cur['doe']['C'][int(q[1][1:])] = float(q[2])
+            continue
+        # SPS ODD（CODE V 奇偶全有的多项式非球面，Lens System Setup RM p.352）：第 3 个参数 = NRADIUS（0 = 1.0）；
+        # SCO C1 / K = 圆锥常数，SCO C(n+1) / ARn = r^n 的系数，SCO NRADIUS 也可以单写。
+        # CODE V 自带的 ZEMAXOS_TO_CV 宏把 Zemax 的 Extended Asphere（XASPHERE）转成它，写的是 C5 = r^4、C7 = r^6……
+        # 以前这里不认 SPS，这种面整个掉成球面（索尼 16-35 GM II 面 29/30，OpticStudio 里 MTF 全空）。
+        m = re.match(r'^SPS\s+(\w+)\s*(-?[\d.eE+-]+)?', t)
+        if m:
+            if m.group(1).upper() != 'ODD':
+                sys.exit('!! 面%d 是 SPS %s，seq2zmx 还不支持（只认 SPS ODD）' % (len(surfs) - 1, m.group(1)))
+            nr = float(m.group(2)) if m.group(2) else 0.0
+            cur['sps'] = {'K': 0.0, 'nr': nr or 1.0, 'C': {}}
+            continue
+        if cur['sps'] is not None and re.match(r'^(SCO|SCC)\b', t):
+            for part in t.split(';'):
+                q = part.split()
+                if len(q) < 3 or q[0] != 'SCO':
+                    continue                              # SCC = 变量控制码，转换用不到
+                nm, v = q[1].upper(), float(q[2])
+                mc, ma = re.match(r'^C(\d+)$', nm), re.match(r'^AR(\d+)$', nm)
+                if nm == 'K' or (mc and int(mc.group(1)) == 1):
+                    cur['sps']['K'] = v
+                elif nm == 'NRADIUS':
+                    cur['sps']['nr'] = v or 1.0
+                elif mc:
+                    cur['sps']['C'][int(mc.group(1)) - 1] = v
+                elif ma:
+                    cur['sps']['C'][int(ma.group(1))] = v
             continue
         if   t.startswith('CIR'): cur['cir'] = float(t.split()[1])
         elif t == 'STO':          cur['sto'] = True
@@ -254,6 +281,12 @@ def build(seq, args):
         if s.get('doe'):
             if s['asp']: raise SystemExit('面%d 同时有 ASP 与 DOE，未支持' % idx)
             ztyp = 'BINARY_2'
+        if s.get('sps'):
+            if s['asp'] or s.get('doe'): raise SystemExit('面%d 同时有 SPS ODD 与 ASP/DOE，未支持' % idx)
+            # 只有偶数次 → Extended Asphere（XASPHERE，XDAT 2+i = ρ^(2i)）；有奇数次 → Extended Odd Asphere
+            # （XOSPHERE，XDAT 2+k = ρ^k）。两者 XDAT 1 = 项数、XDAT 2 = 归一化半径，和 CODE V 的 NRADIUS 同义
+            pw = sorted(k for k, v in s['sps']['C'].items() if v)
+            ztyp = 'XOSPHERE' if any(k % 2 for k in pw) else 'XASPHERE'
         a('  TYPE ' + ztyp)
         a('  CURV %s 0 0 0 0 ""' % num(0.0 if s['rdy'] == 0 else 1.0/s['rdy'], '%.16G'))
         a('  HIDE 0 0 0 0 0 0 0 0 0 0 0 0'); a('  MIRR 2 0'); a('  SLAB %d' % (idx+1))
@@ -270,6 +303,18 @@ def build(seq, args):
         elif ztyp == 'EVENASPH':
             a('  PARM 1 0')
             for p in range(2, 9): a('  PARM %d %s' % (p, num(s['asp']['c'][p-2])))
+        elif s.get('sps'):
+            xd = '  XDAT %d %.12E 0 0 1.000000000000E+00 0.000000000000E+00 0 ""'
+            C = s['sps']['C']; pmax = max([k for k, v in C.items() if v] or [2])
+            if ztyp == 'XASPHERE':
+                n = (pmax + 1) // 2
+                a(xd % (1, float(n))); a(xd % (2, s['sps']['nr']))
+                for i in range(1, n + 1): a(xd % (i + 2, float(C.get(2 * i, 0.0))))
+            else:
+                a(xd % (1, float(pmax))); a(xd % (2, s['sps']['nr']))
+                for k in range(1, pmax + 1): a(xd % (k + 2, float(C.get(k, 0.0))))
+            notes.append('面%d 是 CODE V 的 SPS ODD → %s（系数在 Extra Data Editor 里）'
+                         % (idx, 'Extended Asphere' if ztyp == 'XASPHERE' else 'Extended Odd Asphere'))
         elif ztyp == 'XASPHERE':
             xd = '  XDAT %d %.12E 0 0 1.000000000000E+00 0.000000000000E+00 0 ""'
             a(xd % (1, 10.0)); a(xd % (2, 1.0)); a(xd % (3, 0.0))
@@ -287,6 +332,7 @@ def build(seq, args):
             a('  GLAS ___BLANK 1 0 %s %s 0 0 0 0 0 0' % (num(s['model'][0]), num(s['model'][1])))
             notes.append('面%d 是 CODE V 模型玻璃 → zmx 模型玻璃，dPgF 留 0（二级光谱不准，建议配真实牌号）' % idx)
         if s['asp']: a('  CONI %s' % num(s['asp']['K']))
+        elif s.get('sps'): a('  CONI %s' % num(s['sps']['K']))
         if s['cir'] is not None:
             a('  DIAM %s 1 0 0 1 ""' % num(s['cir'])); a('  MEMA %s 0 0 0 1 ""' % num(s['cir']))
         else:
@@ -368,7 +414,7 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('seq'); ap.add_argument('-o', '--out')
     ap.add_argument('--name'); ap.add_argument('--glassdir')
-    ap.add_argument('--gcat', help='厂家=目录文件名，逗号分隔，如 "CDGM=CDGM2025011,HOYA=HOYA20260707"')
+    ap.add_argument('--gcat', help='厂家=目录文件名，逗号分隔，如 "CDGM=CDGM-ZEMAX202609,HOYA=HOYA20260707"')
     ap.add_argument('--reverse-fields', action='store_true', help='视场倒成 Zemax 习惯（最大视场在前）')
     ap.add_argument('--raim', type=int, default=2, help='Ray Aiming 0=Off 1=Paraxial 2=Real（默认 2）')
     ap.add_argument('--no-clap', action='store_true', help='CIR 只写 DIAM，不写挡光的 CLAP')

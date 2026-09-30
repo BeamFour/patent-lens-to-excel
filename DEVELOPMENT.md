@@ -52,8 +52,8 @@ patent-lens-to-excel/
 |---|---|
 | Python | `E:\Python\python`（3.11.4）。**每次先 `export PYTHONIOENCODING=utf-8`**，否则 ★/⚠ 撞 GBK 报错 |
 | Python 包 | `pypdf 6.14.2`、`Pillow 12.3.0`；**`openpyxl` 没装** → `build_workbook.py` 跑前 `E:\Python\python -m pip install openpyxl` |
-| poppler | `pdftoppm` / `pdfinfo`（MiKTeX 自带）、`pdftotext`（mingw64）；**路径带空格/括号的 PDF 先复制成短名** |
-| 玻璃目录 | `C:\Users\T1791\Documents\Zemax\Glasscat\`：挑各厂最新一本改名成 `<厂家>.AGF` 放进一个临时目录，`PATENT_GLASS_DIR` 指过去（**必须写 Windows 路径**）；OHARA 用 `OHARA_260701` |
+| poppler | `pdftoppm` / `pdfinfo` **不在 PATH 上**（2026-09-30 核对，MiKTeX 里也找不到）→ 用 `E:\Download\Workbuddy_Cache\tools\poppler\Library\bin`，跑前加进 PATH；`pdftotext`（mingw64）缺 CJK CMap，日文专利直接用 pypdf；**路径带空格/括号的 PDF 先复制成短名** |
+| 玻璃目录 | `E:\Documents\Zemax\Glasscat\`（「文档」重定向到 E:，不是 `C:\Users\T1791\Documents`）：挑各厂最新一本改名成 `<厂家>.AGF` 放进一个临时目录，`PATENT_GLASS_DIR` 指过去（**必须写 Windows 路径**）；2026-09-30 最新：`HOYA20260707` / `OHARA_260529_CATALOG`（本机没有 260701）/ `CDGM-ZEMAX202609` / `NIKON-HIKARI20220701` |
 | Zemax OpticStudio | 2024 R2，`E:\ANSYS Inc\v242\Zemax OpticStudio`；**ZOS-API 许可可用，可无界面加载 .zmx 验证**（`scripts/zapi_vigfit.ps1`） |
 | CODE V | 2026，`E:\CODEV2026`（手册 `doc\*.pdf`、宏 `macro\`）；**COM 接口 `CodeV.Command.2026` 报无许可**（27000@127.0.0.1）→ .seq 只能 `seq2zmx.py` 回转后在 Zemax 里验 |
 | git | 全局没配 user.name/email，提交时 `git -c user.name=T1791 -c user.email=t1791669914@gmail.com commit …`；凭证在 Windows 凭据管理器 |
@@ -140,7 +140,7 @@ for f in scripts/*.py tools/*.py; do python -c "import ast,io,sys;ast.parse(io.o
    `vignet` 没有 `★Py/Px±1被挡`、轴上体检「全部通过」。
 2. **OpticStudio 真机**：`powershell -File scripts\zapi_vigfit.ps1 -File X_catalog.zmx -CheckOnly`
    → 逐结构 PWFN = APER、TOTR 恒定、PMAG = 设计倍率、`all +-1 rays pass`。
-3. **.seq 回转**：`python scripts/seq2zmx.py X.seq -o <scratch>/rt.zmx --glassdir <gc> --gcat "OHARA=OHARA_260701,HOYA=HOYA20260707" --reverse-fields`
+3. **.seq 回转**：`python scripts/seq2zmx.py X.seq -o <scratch>/rt.zmx --glassdir <gc> --gcat "OHARA=OHARA_260529_CATALOG,HOYA=HOYA20260707" --reverse-fields`
    → 对 `rt.zmx` 再跑一次 `-CheckOnly`，结果应与原 .zmx 逐位相同。
 
 改动较大时，用多 agent 做一轮**对抗式审查**（2026-09-17 那轮抓到 10 个真 bug：浮点死循环、反方向外推、
